@@ -8,7 +8,7 @@ from plotly.subplots import make_subplots
 st.set_page_config(
     page_title="Dashboard de Moléculas ILAR",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # Título principal
@@ -22,51 +22,75 @@ def load_data():
     df = pd.read_excel('Version final Extracto base de datos Mar 2023.xlsx', sheet_name='Base en inglés')
     return df
 
+# Función para limpiar duplicados
+def clean_duplicates(df):
+    """
+    Limpia duplicados basándose en columnas clave para evitar repeticiones
+    """
+    # Definir columnas clave para identificar duplicados
+    key_columns = ['Molecule', 'Country', 'Switch Year', 'Strength']
+    
+    # Eliminar duplicados exactos en todas las columnas
+    df_cleaned = df.drop_duplicates()
+    
+    # Eliminar duplicados basándose en las columnas clave
+    # Mantener el primer registro de cada combinación única
+    df_cleaned = df_cleaned.drop_duplicates(subset=key_columns, keep='first')
+    
+    return df_cleaned
+
 # Cargar datos
 try:
     df = load_data()
     
-    # Sidebar para filtros
-    st.sidebar.header("🔍 Filtros")
+    # Limpiar duplicados
+    df = clean_duplicates(df)
     
-    # Filtro de molécula con búsqueda
-    molecules = sorted(df['Molecule'].unique())
-    selected_molecule = st.sidebar.selectbox(
-        "Selecciona una molécula:",
-        options=["Todas las moléculas"] + molecules,
-        help="Busca y selecciona una molécula específica"
-    )
+    # Leyenda explicativa sobre tipos de medicamentos
+    st.info("""
+    **ℹ️ Información sobre tipos de medicamentos:**
+    - **OTC** (Venta libre): Medicamentos que se pueden comprar sin receta médica
+    - **Rx** (Solo prescripción): Medicamentos que requieren receta médica
+    - **Rx-OTC**: Moléculas o combinaciones que pueden estar en ambas categorías dependiendo de la dosis
+    """)
     
-    # Filtrar datos por molécula si se seleccionó una específica
+    # FILTROS PRINCIPALES EN LA PARTE FRONTAL
+    st.header("🔍 Filtros de Búsqueda")
+    
+    # Crear dos columnas para los filtros principales
+    col_filter1, col_filter2 = st.columns(2)
+    
+    with col_filter1:
+        # Filtro de molécula con búsqueda
+        molecules = sorted(df['Molecule'].unique())
+        selected_molecule = st.selectbox(
+            "**Selecciona una molécula:**",
+            options=["Todas las moléculas"] + molecules,
+            help="Busca y selecciona una molécula específica"
+        )
+    
+    with col_filter2:
+        # Filtro de países
+        countries = sorted(df['Country'].unique())
+        selected_countries = st.multiselect(
+            "**Selecciona países:**",
+            options=countries,
+            default=[],  # Sin países seleccionados por defecto
+            help="Selecciona uno o más países para analizar (vacío = todos los países)"
+        )
+    
+    # Aplicar filtros
+    filtered_df = df.copy()
+    
+    # Filtrar por molécula si se seleccionó una específica
     if selected_molecule != "Todas las moléculas":
-        filtered_df = df[df['Molecule'] == selected_molecule]
-    else:
-        filtered_df = df
-    
-    # Filtro de países
-    countries = sorted(filtered_df['Country'].unique())
-    selected_countries = st.sidebar.multiselect(
-        "Selecciona países:",
-        options=countries,
-        default=[],  # Sin países seleccionados por defecto
-        help="Selecciona uno o más países para analizar (vacío = todos los países)"
-    )
+        filtered_df = filtered_df[filtered_df['Molecule'] == selected_molecule]
     
     # Aplicar filtro de países
     if selected_countries:
         filtered_df = filtered_df[filtered_df['Country'].isin(selected_countries)]
     
-    # Filtro adicional por tipo RX/OTC
-    rx_otc_options = filtered_df['RX-OTC - Molecule'].unique()
-    selected_rx_otc = st.sidebar.multiselect(
-        "Tipo de medicamento:",
-        options=rx_otc_options,
-        default=rx_otc_options,
-        help="Filtra por tipo de medicamento (RX o OTC)"
-    )
-    
-    if selected_rx_otc:
-        filtered_df = filtered_df[filtered_df['RX-OTC - Molecule'].isin(selected_rx_otc)]
+    st.markdown("---")
     
     # Mostrar información general
     col1, col2, col3 = st.columns(3)
@@ -82,6 +106,8 @@ try:
     
     st.markdown("---")
     
+
+    
     # Crear tabs para diferentes visualizaciones
     tab1, tab2 = st.tabs(["📋 Datos", "📊 Análisis por País"])
     
@@ -96,7 +122,7 @@ try:
         selected_columns = st.multiselect(
             "Selecciona columnas a mostrar:",
             options=all_columns,
-            default=['Molecule', 'Switch Year', 'Country', 'RX-OTC - Molecule', 'Strength']
+            default=['Molecule', 'Switch Year', 'Country', 'RX-OTC - Product', 'Strength', 'NFC1']
         )
         
         if selected_columns:
@@ -126,13 +152,14 @@ try:
         
         with col2:
             # Gráfico de pie - Distribución RX vs OTC
-            rx_otc_counts = filtered_df['RX-OTC - Molecule'].value_counts()
-            fig_pie = px.pie(
-                values=rx_otc_counts.values,
-                names=rx_otc_counts.index,
-                title="Distribución RX vs OTC"
-            )
-            st.plotly_chart(fig_pie, use_container_width=True)
+            if 'RX-OTC - Molecule' in filtered_df.columns:
+                rx_otc_counts = filtered_df['RX-OTC - Molecule'].value_counts()
+                fig_pie = px.pie(
+                    values=rx_otc_counts.values,
+                    names=rx_otc_counts.index,
+                    title="Distribución RX vs OTC"
+                )
+                st.plotly_chart(fig_pie, use_container_width=True)
 
 except FileNotFoundError:
     st.error("⚠️ No se pudo encontrar el archivo Excel. Por favor, asegúrate de que el archivo 'Version final Extracto base de datos Mar 2023.xlsx' esté en el mismo directorio que este script.")
@@ -143,4 +170,4 @@ except Exception as e:
 
 # Footer
 st.markdown("---")
-st.markdown("💡 **Tip:** Usa los filtros en la barra lateral para explorar diferentes aspectos de los datos.")
+st.markdown("💡 **Tip:** Usa los filtros principales en la parte superior para explorar los datos de manera intuitiva.")
